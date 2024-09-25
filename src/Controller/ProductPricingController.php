@@ -3,9 +3,8 @@
 namespace App\Controller;
 
 use App\Entity\Product;
-use App\Service\PaypalPaymentProcessor;
-use App\Service\StripePaymentProcessor;
 use App\Entity\Coupon;
+use App\Service\PaymentService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -14,6 +13,13 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 class ProductPricingController extends AbstractController
 {
+    private PaymentService $paymentService;
+
+    public function __construct(PaymentService $paymentService)
+    {
+        $this->paymentService = $paymentService;
+    }
+
     /**
      * @Route("/calculate-price", name="calculate_price", methods={"POST"})
      */
@@ -70,11 +76,8 @@ class ProductPricingController extends AbstractController
     /**
      * @Route("/purchase", name="purchase", methods={"POST"})
      */
-    public function purchase(
-		Request $request, 
-		PaypalPaymentProcessor $paypalPaymentProcessor,
-		StripePaymentProcessor $stripePaymentProcessor
-	): JsonResponse {
+    public function purchase(Request $request): JsonResponse
+    {
         $data = json_decode($request->getContent(), true);
 
         // Валидация и получение данных (упрощенная логика)
@@ -93,25 +96,19 @@ class ProductPricingController extends AbstractController
         // Выбор платежного процессора
         switch ($paymentProcessor) {
             case 'paypal':
-				$isPaid = $paypalPaymentProcessor->pay($price);
-                if ($isPaid) {
-                    return new JsonResponse(['status' => 'Payment successful'], 200);
-                } else {
-                    return new JsonResponse(['error' => 'Payment failed'], 400);
-                }
+                $isPaymentSuccessful = $this->paymentService->processPaypalPayment($price * 100); // В центах
                 break;
             case 'stripe':
-                $isPaid = $stripePaymentProcessor->processPayment($price);
-                if ($isPaid) {
-                    return new JsonResponse(['status' => 'Payment successful'], 200);
-                } else {
-                    return new JsonResponse(['error' => 'Payment failed'], 400);
-                }
+                $isPaymentSuccessful = $this->paymentService->processStripePayment($price); // В евро
                 break;
             default:
                 return new JsonResponse(['error' => 'Invalid payment processor'], 400);
         }
 
-        return new JsonResponse(['status' => 'Payment successful'], 200);
+        if ($isPaymentSuccessful) {
+            return new JsonResponse(['message' => 'Payment successful'], 200);
+        } else {
+            return new JsonResponse(['error' => 'Payment failed'], 400);
+        }
     }
 }
